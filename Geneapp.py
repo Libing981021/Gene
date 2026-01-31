@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 # ==========================================
-# 1. 配置与参数
+# 0. 全局字体与样式调整 (CSS Injection)
 # ==========================================
 st.set_page_config(
     page_title="CRC Recurrence Risk Predictor",
@@ -12,7 +12,33 @@ st.set_page_config(
     layout="wide"
 )
 
-# 模型系数
+# 使用 CSS 放大全局字体，优化阅读体验
+st.markdown("""
+    <style>
+    /* 1. 放大全局基础字体 */
+    html, body, [class*="css"] {
+        font-size: 18px !important; 
+    }
+    /* 2. 放大标题 */
+    h1 { font-size: 3rem !important; }
+    h2 { font-size: 2.2rem !important; }
+    h3 { font-size: 1.8rem !important; }
+    
+    /* 3. 优化结果卡片的字体 */
+    .result-card-score { font-size: 3.5rem !important; font-weight: bold; }
+    .result-card-label { font-size: 1.2rem !important; }
+    
+    /* 4. 调整输入框标签字体 */
+    .stNumberInput label { font-size: 1.1rem !important; font-weight: 600; }
+    
+    /* 5. 调整 Markdown 文本行高，增加可读性 */
+    .stMarkdown p { line-height: 1.6; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==========================================
+# 1. 模型参数
+# ==========================================
 COEFFICIENTS = {
     "TCEAL4": 0.3364594,
     "ACTR3B": -0.4104630,
@@ -30,7 +56,7 @@ REF_GENE = "EMC7"
 # ==========================================
 with st.sidebar:
     st.header("Input Feature Values")
-    st.caption("请输入 Log2 转化后的基因表达量")
+    st.caption("Enter Log2 transformed gene expression")
     
     st.markdown("---")
     
@@ -43,12 +69,12 @@ with st.sidebar:
         max_value=25.0,
         step=0.1,
         format="%.2f",
-        help="内参基因用于标准化数据 (Normalizer)"
+        help="Internal control for normalization (Target - Ref)"
     )
 
     st.markdown("---")
     
-    # 2.2 风险基因
+    # 2.2 风险基因输入
     st.markdown("**Target Genes Expression**")
     inputs = {}
     
@@ -68,6 +94,7 @@ with st.sidebar:
 st.title("Predicting CRC Recurrence Risk Using a 6-Gene Signature")
 st.markdown("This application predicts the likelihood of postoperative recurrence in Stage II/III Colorectal Cancer.")
 
+# 信息条
 st.info(f"""
 * **Model Type**: LASSO + Stepwise Cox Regression
 * **Cutoff Value**: {CUTOFF_VALUE}
@@ -76,17 +103,17 @@ st.info(f"""
 
 st.write("Input the relevant feature values in the sidebar to obtain predictions.")
 st.write("") 
-predict_btn = st.button("🚀 Predict Risk (开始预测)", type="primary")
+predict_btn = st.button("🚀 Predict Risk (开始预测)", type="primary", use_container_width=True)
 
 # ==========================================
-# 4. 计算逻辑与结果展示
+# 4. 计算与结果展示
 # ==========================================
 if predict_btn:
     st.markdown("---")
     
-    # --- A. 计算核心逻辑 ---
+    # --- A. 计算逻辑 ---
     risk_score = 0
-    calculation_details = [] # 存储每一步的数据
+    calculation_details = []
     
     for gene, coef in COEFFICIENTS.items():
         raw_val = inputs[gene]
@@ -94,11 +121,10 @@ if predict_btn:
         contribution = norm_expr * coef
         risk_score += contribution
         
-        # 保存明细用于表格展示
         calculation_details.append({
             "Gene": gene,
             "Raw Value": raw_val,
-            "Norm Value (Gene - Ref)": norm_expr,
+            "Norm Value": norm_expr,
             "Coefficient": coef,
             "Contribution": contribution
         })
@@ -109,55 +135,65 @@ if predict_btn:
     risk_color = "#d32f2f" if is_high_risk else "#388e3c"
     bg_color = "rgba(211, 47, 47, 0.1)" if is_high_risk else "rgba(56, 142, 60, 0.1)"
 
-    # --- C. 页面布局 (左右分栏) ---
-    col_res, col_viz = st.columns([1, 1.5], gap="medium")
+    # --- C. 结果布局 ---
+    col_res, col_viz = st.columns([1, 1.4], gap="large")
 
-    # === 左侧栏：结果卡片 + 仪表盘 + 临床建议 ===
+    # === 左侧栏：结果 + 仪表盘 + 临床建议 ===
     with col_res:
         st.subheader("Prediction Result")
         
-        # 1. 结果数值卡片
+        # 1. 结果卡片 (HTML自定义样式)
         st.markdown(f"""
-        <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; border: 2px solid {risk_color}; text-align: center; margin-bottom: 20px;">
-            <p style="margin:0; color: #555;">Risk Score</p>
-            <h1 style="margin:0; font-size: 3em; color: {risk_color};">{risk_score:.4f}</h1>
-            <hr style="border-top: 1px solid {risk_color}; opacity: 0.3; margin: 10px 0;">
-            <h3 style="margin:0; color: {risk_color};">{risk_level}</h3>
+        <div style="background-color: {bg_color}; padding: 25px; border-radius: 12px; border: 3px solid {risk_color}; text-align: center; margin-bottom: 25px;">
+            <p class="result-card-label" style="margin:0; color: #555;">Risk Score</p>
+            <h1 class="result-card-score" style="margin:5px 0; color: {risk_color};">{risk_score:.4f}</h1>
+            <hr style="border-top: 2px solid {risk_color}; opacity: 0.3; margin: 15px 0;">
+            <h2 style="margin:0; color: {risk_color};">{risk_level}</h2>
         </div>
         """, unsafe_allow_html=True)
 
         # 2. 仪表盘
-        max_gauge_val = max(5.0, risk_score + 1)
+        max_gauge_val = max(5.0, risk_score + 1.0)
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+delta", value = risk_score,
             domain = {'x': [0, 1], 'y': [0, 1]},
             delta = {'reference': CUTOFF_VALUE, 'increasing': {'color': "red"}, 'decreasing': {'color': "green"}},
             gauge = {
-                'axis': {'range': [None, max_gauge_val]},
+                'axis': {'range': [None, max_gauge_val], 'tickwidth': 1},
                 'bar': {'color': risk_color},
                 'steps': [
                     {'range': [0, CUTOFF_VALUE], 'color': "rgba(56, 142, 60, 0.15)"},
                     {'range': [CUTOFF_VALUE, max_gauge_val], 'color': "rgba(211, 47, 47, 0.15)"}
                 ],
-                'threshold': {'line': {'color': "red", 'width': 3}, 'thickness': 0.8, 'value': CUTOFF_VALUE}
+                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': CUTOFF_VALUE}
             }
         ))
-        fig_gauge.update_layout(height=200, margin=dict(l=20, r=20, t=10, b=10))
+        fig_gauge.update_layout(height=220, margin=dict(l=20, r=20, t=10, b=10))
         st.plotly_chart(fig_gauge, use_container_width=True)
 
-        # 3. 临床建议
+        # 3. 临床建议 (Clinical Recommendation) - 已更新最新指南内容
         st.markdown("#### 💡 Clinical Recommendation")
         if is_high_risk:
-            st.warning("**High Risk Strategy:**\n\n1. Consider aggressive chemotherapy.\n2. Shorten follow-up intervals.\n3. Check MSI/MMR status.")
+            st.warning(
+                "**High Risk Strategy (NCCN/ASCO Guidelines):**\n\n"
+                "1. **Adjuvant Therapy**: Consider Oxaliplatin-based doublet chemotherapy (e.g., FOLFOX/CAPOX).\n"
+                "2. **Surveillance**: Intensive follow-up (CT/CEA every 3-6 mos for 2 years).\n"
+                "3. **Molecular**: Verify dMMR/MSI-H status (may affect 5-FU benefit)."
+            )
         else:
-            st.success("**Low Risk Strategy:**\n\n1. Maintain standard follow-up.\n2. Avoid overtreatment.\n3. Regular checkups every 6 months.")
+            st.success(
+                "**Low Risk Strategy:**\n\n"
+                "1. **Standard Care**: Observation or shorter duration therapy (e.g., 3 months CAPOX).\n"
+                "2. **Surveillance**: Standard follow-up intervals (CEA every 6 mos).\n"
+                "3. **QoL**: Avoid overtreatment to minimize neurotoxicity."
+            )
 
-    # === 右侧栏：生存曲线 + 详细计算表 (放在此处即右下角) ===
+    # === 右侧栏：生存曲线 + 详细计算表 ===
     with col_viz:
         st.subheader("Predicted Survival Analysis")
-        st.caption("Simulation based on risk group stratification")
+        st.caption("Simulation based on risk stratification")
         
-        # 1. 绘制生存曲线
+        # 1. 生存曲线
         time_points = np.linspace(0, 60, 100)
         surv_low = np.exp(-0.005 * time_points)
         surv_high = np.exp(-0.025 * time_points)
@@ -173,41 +209,42 @@ if predict_btn:
         ))
 
         fig_surv.update_layout(
-            title="Recurrence-Free Survival (RFS)", xaxis_title="Time (Months)", yaxis_title="Probability",
-            yaxis_range=[0, 1.05], template="plotly_white", height=400, hovermode="x unified",
+            title="Recurrence-Free Survival (RFS)", 
+            xaxis_title="Time (Months)", 
+            yaxis_title="Probability",
+            yaxis_range=[0, 1.05], 
+            template="plotly_white", 
+            height=450, 
+            hovermode="x unified",
+            font=dict(size=14), # 图表字体也稍微放大
             legend=dict(orientation="h", y=1.02, x=1, xanchor="right")
         )
         st.plotly_chart(fig_surv, use_container_width=True)
 
-        # ==========================================
-        # 2. 新增：详细计算过程 (放在右侧栏底部)
-        # ==========================================
+        # 2. 详细计算过程 (Details)
         st.markdown("---")
-        with st.expander("📝 查看详细计算过程 (Details)", expanded=True):
-            # 将数据转为 DataFrame
+        with st.expander("📝 Calculation Details (详细数据)", expanded=True):
             df_details = pd.DataFrame(calculation_details)
             
-            # 使用 Pandas Style 进行格式化 (类似你截图中的样子)
-            # 保留4位小数，隐藏索引
+            # 样式化表格
             st.dataframe(
                 df_details.style
-                .format("{:.4f}", subset=["Raw Value", "Norm Value (Gene - Ref)", "Coefficient", "Contribution"])
-                .background_gradient(subset=["Contribution"], cmap="RdYlGn_r", vmin=-0.5, vmax=0.5), # 颜色高亮贡献度
+                .format("{:.4f}", subset=["Raw Value", "Norm Value", "Coefficient", "Contribution"])
+                .background_gradient(subset=["Contribution"], cmap="RdYlGn_r", vmin=-0.5, vmax=0.5),
                 use_container_width=True,
                 hide_index=True 
             )
-            
-            # 公式注脚
-            st.caption(f"计算公式: RiskScore = Σ ( (Expression_Gene - Expression_{REF_GENE}) × Coefficient )")
+            st.caption(f"Formula: RiskScore = Σ ( (Expression_Gene - {REF_GENE}) × Coefficient )")
 
 # ==========================================
-# 5. 页脚免责声明
+# 5. 页脚
 # ==========================================
 st.markdown("---")
 st.markdown(
     """
-    <div style='text-align: center; color: #888; font-size: 12px;'>
-    ⚠️ <b>Disclaimer:</b> Research use only. Not for clinical diagnosis.
+    <div style='text-align: center; color: #888; font-size: 14px;'>
+    ⚠️ <b>Disclaimer:</b> Research use only. Not for clinical diagnosis. 
+    Guidelines based on NCCN/ASCO recommendations.
     <br>© 2026 CRC Research Group.
     </div>
     """, 
