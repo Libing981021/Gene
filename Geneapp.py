@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 模型系数
+# 模型系数 (Coefficients)
 COEFFICIENTS = {
     "TCEAL4": 0.3364594,
     "ACTR3B": -0.4104630,
@@ -34,14 +34,16 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 2.1 内参基因
+    # 2.1 内参基因 (增加了 min_value 和 max_value 防止误操作)
     st.markdown(f"**Reference Gene ({REF_GENE})**")
     val_ref = st.number_input(
         f"{REF_GENE} Value", 
         value=6.90, 
+        min_value=0.0,
+        max_value=25.0,
         step=0.1,
         format="%.2f",
-        help="内参基因用于标准化数据"
+        help="内参基因用于标准化数据 (Normalizer)"
     )
 
     st.markdown("---")
@@ -50,26 +52,26 @@ with st.sidebar:
     st.markdown("**Target Genes Expression**")
     inputs = {}
     
-    # 为了布局好看，如果你想让输入框紧凑一点，可以不做分列，直接垂直排列
-    # 这里完全模仿左侧栏的样式
+    # 这里设置默认值为 10.0，模拟常见表达水平
     for gene in COEFFICIENTS.keys():
         inputs[gene] = st.number_input(
             f"{gene}", 
             value=10.00, 
+            min_value=0.0,
+            max_value=25.0,
             step=0.1,
             format="%.2f"
         )
 
 # ==========================================
-# 3. 主界面区域
+# 3. 主界面：标题与介绍
 # ==========================================
-
-# 3.1 标题与介绍
 st.title("Predicting CRC Recurrence Risk Using a 6-Gene Signature")
 st.markdown("""
 This application predicts the likelihood of postoperative recurrence in Stage II/III Colorectal Cancer based on gene expression profiles.
 """)
 
+# 顶部简要信息条
 st.info(f"""
 * **Model Type**: LASSO + Stepwise Cox Regression
 * **Cutoff Value**: {CUTOFF_VALUE}
@@ -78,9 +80,8 @@ st.info(f"""
 
 st.write("Input the relevant feature values in the sidebar to obtain predictions and probability estimates.")
 
-# 3.2 预测按钮
-st.write("") # 增加一点间距
-predict_btn = st.button("Predict Risk (开始预测)", type="primary")
+st.write("") 
+predict_btn = st.button("🚀 Predict Risk (开始预测)", type="primary")
 
 # ==========================================
 # 4. 计算逻辑与结果展示
@@ -97,104 +98,156 @@ if predict_btn:
     # --- B. 判定风险等级 ---
     is_high_risk = risk_score > CUTOFF_VALUE
     risk_level = "High Risk (高风险)" if is_high_risk else "Low Risk (低风险)"
+    
+    # 定义颜色方案
     risk_color = "#d32f2f" if is_high_risk else "#388e3c" # 深红 vs 深绿
     bg_color = "rgba(211, 47, 47, 0.1)" if is_high_risk else "rgba(56, 142, 60, 0.1)"
 
-    # --- C. 结果布局 ---
-    col_res, col_viz = st.columns([1, 1.5])
+    # --- C. 结果布局 (左右分栏) ---
+    col_res, col_viz = st.columns([1, 1.5], gap="medium")
 
-    # 左列：数值结果 & 临床建议
+    # === 左侧栏：数值结果 & 仪表盘 & 临床建议 ===
     with col_res:
         st.subheader("Prediction Result")
         
-        # 结果卡片
+        # 1. 结果卡片 (数值展示)
         st.markdown(f"""
         <div style="
             background-color: {bg_color};
             padding: 20px;
-            border-radius: 8px;
-            border-left: 6px solid {risk_color};
+            border-radius: 10px;
+            border: 2px solid {risk_color};
+            text-align: center;
             margin-bottom: 20px;
         ">
-            <p style="margin:0; color: #555; font-size: 0.9em;">Risk Score</p>
-            <h2 style="margin:0; color: {risk_color};">{risk_score:.4f}</h2>
+            <p style="margin:0; color: #555; font-size: 14px;">Risk Score</p>
+            <h1 style="margin:0; font-size: 3em; color: {risk_color};">{risk_score:.4f}</h1>
             <hr style="border-top: 1px solid {risk_color}; opacity: 0.3; margin: 10px 0;">
-            <strong style="color: {risk_color}; font-size: 1.2em;">{risk_level}</strong>
+            <h3 style="margin:0; color: {risk_color};">{risk_level}</h3>
         </div>
         """, unsafe_allow_html=True)
 
-        # 临床建议 (根据你提供的图片内容)
-        st.markdown("#### 💡 临床建议 (Clinical Recommendation)")
+        # 2. 仪表盘 (Gauge Chart) - 新增功能！
+        st.markdown("**Risk Gauge (仪表盘)**")
+        
+        # 确定仪表盘的最大值 (为了美观，取 Cutoff 的 3 倍或者 5)
+        max_gauge_val = max(5.0, risk_score + 1)
+        
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+delta",
+            value = risk_score,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            delta = {'reference': CUTOFF_VALUE, 'increasing': {'color': "red"}, 'decreasing': {'color': "green"}},
+            gauge = {
+                'axis': {'range': [None, max_gauge_val], 'tickwidth': 1},
+                'bar': {'color': risk_color},
+                'bgcolor': "white",
+                'borderwidth': 1,
+                'bordercolor': "#eee",
+                'steps': [
+                    {'range': [0, CUTOFF_VALUE], 'color': "rgba(56, 142, 60, 0.15)"}, # 绿色区域
+                    {'range': [CUTOFF_VALUE, max_gauge_val], 'color': "rgba(211, 47, 47, 0.15)"} # 红色区域
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 3},
+                    'thickness': 0.8,
+                    'value': CUTOFF_VALUE
+                }
+            }
+        ))
+        fig_gauge.update_layout(height=200, margin=dict(l=20, r=20, t=10, b=10))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+        # 3. 临床建议
+        st.markdown("#### 💡 Clinical Recommendation")
         if is_high_risk:
             st.warning(
-                "**建议方案 (High Risk Strategy):**\n\n"
-                "1. **辅助治疗**: 建议考虑更积极的辅助化疗方案（如 oxaliplatin-based）。\n"
-                "2. **随访监测**: 建议缩短术后随访间隔（如每 3 个月一次 CT/CEA 检测）。\n"
-                "3. **基因检测**: 建议进行 MSI/MMR 状态及其他驱动基因检测。"
+                "**High Risk Strategy:**\n\n"
+                "1. **Adjuvant Therapy**: Consider aggressive chemotherapy (e.g., oxaliplatin-based).\n"
+                "2. **Follow-up**: Shorten intervals (e.g., CT/CEA every 3 months).\n"
+                "3. **Genetics**: Check MSI/MMR status."
             )
         else:
             st.success(
-                "**建议方案 (Low Risk Strategy):**\n\n"
-                "1. **常规护理**: 可维持标准临床随访计划。\n"
-                "2. **生活质量**: 避免过度医疗，关注患者术后生活质量。\n"
-                "3. **定期复查**: 建议每 6 个月进行一次常规复查。"
+                "**Low Risk Strategy:**\n\n"
+                "1. **Standard Care**: Maintain standard follow-up intervals.\n"
+                "2. **QoL**: Focus on quality of life and avoid overtreatment.\n"
+                "3. **Checkup**: Regular checkups every 6 months."
             )
 
-    # 右列：生存曲线 (模拟数据)
+    # === 右侧栏：生存曲线 ===
     with col_viz:
-        st.subheader("Predicted Survival Curve (Simulation)")
+        st.subheader("Predicted Survival Analysis")
+        st.caption("Simulation based on risk group stratification")
         
-        # --- 模拟生存数据 (仅用于展示效果) ---
-        # 这里的数学公式仅为了生成形状正确的曲线，实际应用应替换为 Cox 模型的 baseline hazard
-        time_points = np.linspace(0, 60, 100) # 0到60个月
+        # --- 模拟生存数据 ---
+        time_points = np.linspace(0, 60, 100) # 60个月
         
-        # 模拟：低风险组衰减慢，高风险组衰减快
+        # 模拟曲线数学公式
         surv_low = np.exp(-0.005 * time_points)  
         surv_high = np.exp(-0.025 * time_points) 
         
-        # 绘图
-        fig = go.Figure()
+        # 确定当前患者属于哪条线
+        patient_curve = surv_high if is_high_risk else surv_low
+        curve_color = risk_color
         
-        # 1. 绘制低风险背景线
-        fig.add_trace(go.Scatter(
+        # 绘图
+        fig_surv = go.Figure()
+        
+        # 1. 低风险背景线 (虚线)
+        fig_surv.add_trace(go.Scatter(
             x=time_points, y=surv_low,
-            mode='lines',
-            name='Low Risk Group (Avg)',
-            line=dict(color='green', width=2, dash='dash' if is_high_risk else 'solid'),
-            opacity=0.3 if is_high_risk else 1.0
+            mode='lines', name='Low Risk Group',
+            line=dict(color='green', width=1, dash='dash'),
+            opacity=0.4
         ))
         
-        # 2. 绘制高风险背景线
-        fig.add_trace(go.Scatter(
+        # 2. 高风险背景线 (虚线)
+        fig_surv.add_trace(go.Scatter(
             x=time_points, y=surv_high,
-            mode='lines',
-            name='High Risk Group (Avg)',
-            line=dict(color='red', width=2, dash='dash' if not is_high_risk else 'solid'),
-            opacity=0.3 if not is_high_risk else 1.0
+            mode='lines', name='High Risk Group',
+            line=dict(color='red', width=1, dash='dash'),
+            opacity=0.4
         ))
 
-        # 3. 标记患者当前预测位置 (用散点表示该患者所属的曲线)
-        patient_curve = surv_high if is_high_risk else surv_low
-        patient_color = 'red' if is_high_risk else 'green'
+        # 3. 当前患者预测线 (实线 + 半透明填充)
+        # 优化点：fillcolor 使用 rgba 设置透明度
+        fill_color_rgba = "rgba(211, 47, 47, 0.1)" if is_high_risk else "rgba(56, 142, 60, 0.1)"
         
-        fig.add_trace(go.Scatter(
+        fig_surv.add_trace(go.Scatter(
             x=time_points, y=patient_curve,
             mode='lines',
-            name='Current Patient Prediction',
-            line=dict(color=patient_color, width=4),
-            fill='tozeroy', # 填充下方颜色，视觉效果更强
-            fillcolor=f"rgba({'255,0,0' if is_high_risk else '0,255,0'}, 0.1)"
+            name='Current Patient',
+            line=dict(color=curve_color, width=3),
+            fill='tozeroy', 
+            fillcolor=fill_color_rgba # <--- 关键修改：半透明填充
         ))
 
-        fig.update_layout(
+        fig_surv.update_layout(
             title="Recurrence-Free Survival (RFS) Probability",
             xaxis_title="Time (Months)",
             yaxis_title="Survival Probability",
             yaxis_range=[0, 1.05],
             template="plotly_white",
-            height=400,
-            hovermode="x unified"
+            height=500, # 稍微调高一点，看起来更大气
+            hovermode="x unified",
+            legend=dict(orientation="h", y=1.02, yanchor="bottom", x=1, xanchor="right")
         )
         
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("注：此生存曲线基于风险评分生成的示意图，仅供参考，不代表真实临床统计数据。")
+        st.plotly_chart(fig_surv, use_container_width=True)
+
+# ==========================================
+# 5. 页脚免责声明 (Footer)
+# ==========================================
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #888; font-size: 12px;'>
+    ⚠️ <b>Disclaimer:</b> This tool is intended for <b>research purposes only</b> and should not be used as the sole basis for clinical decision-making. 
+    The predictions should be interpreted by qualified healthcare professionals in conjunction with other clinical findings.
+    <br>
+    © 2026 CRC Research Group. All Rights Reserved.
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
