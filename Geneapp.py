@@ -1,10 +1,18 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 
 # ==========================================
-# 1. 核心模型参数
+# 1. 配置与参数
 # ==========================================
+st.set_page_config(
+    page_title="CRC Recurrence Risk Predictor",
+    page_icon="🧬",
+    layout="wide"
+)
+
+# 模型系数
 COEFFICIENTS = {
     "TCEAL4": 0.3364594,
     "ACTR3B": -0.4104630,
@@ -18,148 +26,175 @@ CUTOFF_VALUE = 0.5739
 REF_GENE = "EMC7"
 
 # ==========================================
-# 2. 页面配置
-# ==========================================
-st.set_page_config(
-    page_title="CRC Metastasis Predictor",
-    page_icon="🧬",
-    layout="wide" # 宽屏模式，模仿参考图的大气布局
-)
-
-# ==========================================
-# 3. 侧边栏：输入区域 (模仿参考图左侧)
+# 2. 侧边栏：数值输入 (Input Feature Values)
 # ==========================================
 with st.sidebar:
     st.header("Input Feature Values")
-    st.caption("Enter Log2 transformed expression values")
+    st.caption("请输入 Log2 转化后的基因表达量")
     
     st.markdown("---")
     
-    # 3.1 内参基因输入
-    st.markdown("#### **Reference Gene**")
+    # 2.1 内参基因
+    st.markdown(f"**Reference Gene ({REF_GENE})**")
     val_ref = st.number_input(
-        f"{REF_GENE} (Internal Control)", 
+        f"{REF_GENE} Value", 
         value=6.90, 
         step=0.1,
-        help="内参基因用于标准化"
+        format="%.2f",
+        help="内参基因用于标准化数据"
     )
 
-    # 3.2 风险基因输入
-    st.markdown("#### **Target Genes**")
+    st.markdown("---")
     
+    # 2.2 风险基因循环生成输入框
+    st.markdown("**Target Genes Expression**")
     inputs = {}
-    # 遍历生成输入框
+    
+    # 为了布局好看，如果你想让输入框紧凑一点，可以不做分列，直接垂直排列
+    # 这里完全模仿左侧栏的样式
     for gene in COEFFICIENTS.keys():
         inputs[gene] = st.number_input(
             f"{gene}", 
-            value=10.0, 
-            step=0.1
+            value=10.00, 
+            step=0.1,
+            format="%.2f"
         )
 
 # ==========================================
-# 4. 主界面：标题与说明 (模仿参考图右侧)
+# 3. 主界面区域
 # ==========================================
 
-# 4.1 标题和简介
+# 3.1 标题与介绍
 st.title("Predicting CRC Recurrence Risk Using a 6-Gene Signature")
-
 st.markdown("""
-This app predicts the likelihood of postoperative recurrence in Stage II/III Colorectal Cancer (CRC) based on a specific gene expression profile.
-
-The model calculates a risk score using the following features:
+This application predicts the likelihood of postoperative recurrence in Stage II/III Colorectal Cancer based on gene expression profiles.
 """)
 
-# 4.2 特征说明列表
-st.markdown(f"""
-* **{REF_GENE}**: The internal reference gene used for data normalization ($\Delta Log2$).
-* **Target Genes**: A panel of 6 genes (TCEAL4, ACTR3B, ORAI3, PRIM1, LEMD1, INHBB) identified as prognostic markers.
-* **Risk Score**: Calculated using LASSO-derived coefficients.
-* **Probability**: The likelihood of high-risk recurrence based on the cutoff value (**{CUTOFF_VALUE}**).
+st.info(f"""
+* **Model Type**: LASSO + Stepwise Cox Regression
+* **Cutoff Value**: {CUTOFF_VALUE}
+* **Standardization**: $\Delta Log2$ (Target - {REF_GENE})
 """)
 
-st.markdown("Input the relevant gene expression values in the **sidebar** to obtain predictions and risk stratification.")
+st.write("Input the relevant feature values in the sidebar to obtain predictions and probability estimates.")
 
-# 4.3 预测按钮
-# 使用一点空行让按钮和文字分开
-st.write("") 
-predict_btn = st.button("Predict Risk", type="primary")
+# 3.2 预测按钮
+st.write("") # 增加一点间距
+predict_btn = st.button("Predict Risk (开始预测)", type="primary")
 
 # ==========================================
-# 5. 计算与结果展示
+# 4. 计算逻辑与结果展示
 # ==========================================
 if predict_btn:
     st.markdown("---")
     
-    # --- 计算逻辑 ---
+    # --- A. 计算风险评分 ---
     risk_score = 0
-    details = []
-    
     for gene, coef in COEFFICIENTS.items():
         norm_expr = inputs[gene] - val_ref
-        contribution = norm_expr * coef
-        risk_score += contribution
-        
-        details.append({
-            "Gene": gene,
-            "Norm Value": norm_expr,
-            "Contribution": contribution
-        })
+        risk_score += norm_expr * coef
     
-    # --- 判定结果 ---
+    # --- B. 判定风险等级 ---
     is_high_risk = risk_score > CUTOFF_VALUE
     risk_level = "High Risk (高风险)" if is_high_risk else "Low Risk (低风险)"
-    risk_color = "#ff4b4b" if is_high_risk else "#09ab3b"
-    
-    # --- 布局：左侧显示结论卡片，右侧显示可视化图 ---
-    col1, col2 = st.columns([1, 1.5])
-    
-    with col1:
+    risk_color = "#d32f2f" if is_high_risk else "#388e3c" # 深红 vs 深绿
+    bg_color = "rgba(211, 47, 47, 0.1)" if is_high_risk else "rgba(56, 142, 60, 0.1)"
+
+    # --- C. 结果布局 ---
+    col_res, col_viz = st.columns([1, 1.5])
+
+    # 左列：数值结果 & 临床建议
+    with col_res:
         st.subheader("Prediction Result")
-        st.info(f"Risk Score: **{risk_score:.4f}**")
         
         # 结果卡片
         st.markdown(f"""
         <div style="
-            background-color: {'rgba(255, 75, 75, 0.1)' if is_high_risk else 'rgba(9, 171, 59, 0.1)'};
+            background-color: {bg_color};
             padding: 20px;
-            border-radius: 10px;
-            border-left: 5px solid {risk_color};
+            border-radius: 8px;
+            border-left: 6px solid {risk_color};
             margin-bottom: 20px;
         ">
-            <h3 style="margin:0; color: {risk_color};">{risk_level}</h3>
-            <p style="margin:5px 0 0 0; color: #666;">Cutoff: {CUTOFF_VALUE}</p>
+            <p style="margin:0; color: #555; font-size: 0.9em;">Risk Score</p>
+            <h2 style="margin:0; color: {risk_color};">{risk_score:.4f}</h2>
+            <hr style="border-top: 1px solid {risk_color}; opacity: 0.3; margin: 10px 0;">
+            <strong style="color: {risk_color}; font-size: 1.2em;">{risk_level}</strong>
         </div>
         """, unsafe_allow_html=True)
-        
-        # 临床建议
+
+        # 临床建议 (根据你提供的图片内容)
+        st.markdown("#### 💡 临床建议 (Clinical Recommendation)")
         if is_high_risk:
-            st.warning("**Recommendation:** Consider more aggressive adjuvant chemotherapy and shorter follow-up intervals.")
+            st.warning(
+                "**建议方案 (High Risk Strategy):**\n\n"
+                "1. **辅助治疗**: 建议考虑更积极的辅助化疗方案（如 oxaliplatin-based）。\n"
+                "2. **随访监测**: 建议缩短术后随访间隔（如每 3 个月一次 CT/CEA 检测）。\n"
+                "3. **基因检测**: 建议进行 MSI/MMR 状态及其他驱动基因检测。"
+            )
         else:
-            st.success("**Recommendation:** Standard follow-up plan is recommended.")
+            st.success(
+                "**建议方案 (Low Risk Strategy):**\n\n"
+                "1. **常规护理**: 可维持标准临床随访计划。\n"
+                "2. **生活质量**: 避免过度医疗，关注患者术后生活质量。\n"
+                "3. **定期复查**: 建议每 6 个月进行一次常规复查。"
+            )
 
-    with col2:
-        st.subheader("Gene Contribution Analysis")
-        # 准备绘图数据
-        df_details = pd.DataFrame(details)
-        df_details['Color'] = df_details['Contribution'].apply(lambda x: '#ff4b4b' if x > 0 else '#09ab3b')
-        df_details = df_details.sort_values(by="Contribution", ascending=True)
-
-        # 绘制条形图
+    # 右列：生存曲线 (模拟数据)
+    with col_viz:
+        st.subheader("Predicted Survival Curve (Simulation)")
+        
+        # --- 模拟生存数据 (仅用于展示效果) ---
+        # 这里的数学公式仅为了生成形状正确的曲线，实际应用应替换为 Cox 模型的 baseline hazard
+        time_points = np.linspace(0, 60, 100) # 0到60个月
+        
+        # 模拟：低风险组衰减慢，高风险组衰减快
+        surv_low = np.exp(-0.005 * time_points)  
+        surv_high = np.exp(-0.025 * time_points) 
+        
+        # 绘图
         fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=df_details['Gene'],
-            x=df_details['Contribution'],
-            orientation='h',
-            marker=dict(color=df_details['Color']),
-            text=[f"{v:.3f}" for v in df_details['Contribution']],
-            textposition='auto'
+        
+        # 1. 绘制低风险背景线
+        fig.add_trace(go.Scatter(
+            x=time_points, y=surv_low,
+            mode='lines',
+            name='Low Risk Group (Avg)',
+            line=dict(color='green', width=2, dash='dash' if is_high_risk else 'solid'),
+            opacity=0.3 if is_high_risk else 1.0
         ))
         
+        # 2. 绘制高风险背景线
+        fig.add_trace(go.Scatter(
+            x=time_points, y=surv_high,
+            mode='lines',
+            name='High Risk Group (Avg)',
+            line=dict(color='red', width=2, dash='dash' if not is_high_risk else 'solid'),
+            opacity=0.3 if not is_high_risk else 1.0
+        ))
+
+        # 3. 标记患者当前预测位置 (用散点表示该患者所属的曲线)
+        patient_curve = surv_high if is_high_risk else surv_low
+        patient_color = 'red' if is_high_risk else 'green'
+        
+        fig.add_trace(go.Scatter(
+            x=time_points, y=patient_curve,
+            mode='lines',
+            name='Current Patient Prediction',
+            line=dict(color=patient_color, width=4),
+            fill='tozeroy', # 填充下方颜色，视觉效果更强
+            fillcolor=f"rgba({'255,0,0' if is_high_risk else '0,255,0'}, 0.1)"
+        ))
+
         fig.update_layout(
-            height=350,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis_title="Contribution to Risk Score",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
+            title="Recurrence-Free Survival (RFS) Probability",
+            xaxis_title="Time (Months)",
+            yaxis_title="Survival Probability",
+            yaxis_range=[0, 1.05],
+            template="plotly_white",
+            height=400,
+            hovermode="x unified"
         )
+        
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("注：此生存曲线基于风险评分生成的示意图，仅供参考，不代表真实临床统计数据。")
