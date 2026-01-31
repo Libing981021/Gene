@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 模型系数 (Coefficients)
+# 模型系数
 COEFFICIENTS = {
     "TCEAL4": 0.3364594,
     "ACTR3B": -0.4104630,
@@ -84,23 +84,21 @@ predict_btn = st.button("🚀 Predict Risk (开始预测)", type="primary")
 if predict_btn:
     st.markdown("---")
     
-    # --- A. 计算过程 ---
+    # --- A. 计算核心逻辑 ---
     risk_score = 0
-    calculation_details = [] # 用于存储详细计算步骤
+    calculation_details = [] # 存储每一步的数据
     
     for gene, coef in COEFFICIENTS.items():
         raw_val = inputs[gene]
-        # 核心公式：归一化值 = 目标基因 - 内参基因
         norm_expr = raw_val - val_ref
         contribution = norm_expr * coef
         risk_score += contribution
         
-        # 收集数据用于展示
+        # 保存明细用于表格展示
         calculation_details.append({
             "Gene": gene,
-            "Raw Value (Log2)": raw_val,
-            "Ref Value": val_ref,
-            "Norm Value (ΔLog2)": norm_expr,
+            "Raw Value": raw_val,
+            "Norm Value (Gene - Ref)": norm_expr,
             "Coefficient": coef,
             "Contribution": contribution
         })
@@ -111,14 +109,14 @@ if predict_btn:
     risk_color = "#d32f2f" if is_high_risk else "#388e3c"
     bg_color = "rgba(211, 47, 47, 0.1)" if is_high_risk else "rgba(56, 142, 60, 0.1)"
 
-    # --- C. 结果布局 (两列) ---
+    # --- C. 页面布局 (左右分栏) ---
     col_res, col_viz = st.columns([1, 1.5], gap="medium")
 
-    # === 左列：结果与建议 ===
+    # === 左侧栏：结果卡片 + 仪表盘 + 临床建议 ===
     with col_res:
         st.subheader("Prediction Result")
         
-        # 结果卡片
+        # 1. 结果数值卡片
         st.markdown(f"""
         <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; border: 2px solid {risk_color}; text-align: center; margin-bottom: 20px;">
             <p style="margin:0; color: #555;">Risk Score</p>
@@ -128,7 +126,7 @@ if predict_btn:
         </div>
         """, unsafe_allow_html=True)
 
-        # 仪表盘
+        # 2. 仪表盘
         max_gauge_val = max(5.0, risk_score + 1)
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+delta", value = risk_score,
@@ -147,19 +145,19 @@ if predict_btn:
         fig_gauge.update_layout(height=200, margin=dict(l=20, r=20, t=10, b=10))
         st.plotly_chart(fig_gauge, use_container_width=True)
 
-        # 临床建议
+        # 3. 临床建议
         st.markdown("#### 💡 Clinical Recommendation")
         if is_high_risk:
             st.warning("**High Risk Strategy:**\n\n1. Consider aggressive chemotherapy.\n2. Shorten follow-up intervals.\n3. Check MSI/MMR status.")
         else:
             st.success("**Low Risk Strategy:**\n\n1. Maintain standard follow-up.\n2. Avoid overtreatment.\n3. Regular checkups every 6 months.")
 
-    # === 右列：生存曲线 ===
+    # === 右侧栏：生存曲线 + 详细计算表 (放在此处即右下角) ===
     with col_viz:
         st.subheader("Predicted Survival Analysis")
         st.caption("Simulation based on risk group stratification")
         
-        # 模拟数据
+        # 1. 绘制生存曲线
         time_points = np.linspace(0, 60, 100)
         surv_low = np.exp(-0.005 * time_points)
         surv_high = np.exp(-0.025 * time_points)
@@ -176,43 +174,34 @@ if predict_btn:
 
         fig_surv.update_layout(
             title="Recurrence-Free Survival (RFS)", xaxis_title="Time (Months)", yaxis_title="Probability",
-            yaxis_range=[0, 1.05], template="plotly_white", height=450, hovermode="x unified",
+            yaxis_range=[0, 1.05], template="plotly_white", height=400, hovermode="x unified",
             legend=dict(orientation="h", y=1.02, x=1, xanchor="right")
         )
         st.plotly_chart(fig_surv, use_container_width=True)
 
-    # ==========================================
-    # 5. 新增：详细计算过程 (Expandable Section)
-    # ==========================================
-    st.markdown("---")
-    with st.expander("📝 查看详细计算过程 (Calculation Details & Formula)", expanded=False):
-        st.markdown("#### 1. 计算公式 (Formula)")
-        st.latex(r"""
-        RiskScore = \sum_{i=1}^{n} \left[ (Expression_{Gene_i} - Expression_{Ref}) \times Coefficient_i \right]
-        """)
-        
-        st.markdown("#### 2. 数据明细 (Data Table)")
-        st.write(f"**内参基因 ({REF_GENE}) 值:** `{val_ref:.2f}`")
-        
-        # 创建 DataFrame
-        df_details = pd.DataFrame(calculation_details)
-        
-        # 格式化显示（保留4位小数，增加颜色）
-        # 我们使用 Pandas Style 来给 Contribution 列加颜色条，直观显示正负贡献
-        st.dataframe(
-            df_details.style
-            .format("{:.4f}", subset=["Raw Value (Log2)", "Ref Value", "Norm Value (ΔLog2)", "Coefficient", "Contribution"])
-            .background_gradient(subset=["Contribution"], cmap="RdYlGn_r", vmin=-0.5, vmax=0.5),
-            use_container_width=True
-        )
-        
-        st.caption("""
-        * **Norm Value**: The normalized expression ($\Delta Log2$).
-        * **Contribution**: The impact of this gene on the final risk score. (Red = Increases Risk, Green = Decreases Risk).
-        """)
+        # ==========================================
+        # 2. 新增：详细计算过程 (放在右侧栏底部)
+        # ==========================================
+        st.markdown("---")
+        with st.expander("📝 查看详细计算过程 (Details)", expanded=True):
+            # 将数据转为 DataFrame
+            df_details = pd.DataFrame(calculation_details)
+            
+            # 使用 Pandas Style 进行格式化 (类似你截图中的样子)
+            # 保留4位小数，隐藏索引
+            st.dataframe(
+                df_details.style
+                .format("{:.4f}", subset=["Raw Value", "Norm Value (Gene - Ref)", "Coefficient", "Contribution"])
+                .background_gradient(subset=["Contribution"], cmap="RdYlGn_r", vmin=-0.5, vmax=0.5), # 颜色高亮贡献度
+                use_container_width=True,
+                hide_index=True 
+            )
+            
+            # 公式注脚
+            st.caption(f"计算公式: RiskScore = Σ ( (Expression_Gene - Expression_{REF_GENE}) × Coefficient )")
 
 # ==========================================
-# 6. 页脚
+# 5. 页脚免责声明
 # ==========================================
 st.markdown("---")
 st.markdown(
